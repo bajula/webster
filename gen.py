@@ -1,4 +1,5 @@
 from HTMLParser import HTMLParser
+import re
 import random
 import socket
 import sys
@@ -12,6 +13,9 @@ except ImportError:
     sys.stderr.write("Update python!")
     sys.exit(1)
 
+
+BLACKLIST_FILE = "combined-blacklist.txt"
+BLACKLIST = set()
 # Data source
 TOP_URL_FILE = "Quantcast-Top-Million.txt"
 URLS = []
@@ -21,8 +25,8 @@ LINK_DEPTH = 3
 MIN_WAIT = 30
 MAX_WAIT = 300
 # Delays between following links in pages
-LINKS_MIN_WAIT = 10
-LINKS_MAX_WAIT = 60
+LINKS_MIN_WAIT = 5
+LINKS_MAX_WAIT = 30
 
 
 class HTMLLinkParser(HTMLParser):
@@ -72,6 +76,8 @@ def verify_url(url):
 
 
 def init_top_urls():
+    sys.stdout.write("Initializing URLs...")
+    sys.stdout.flush()
     with open(TOP_URL_FILE, "r") as fin:
         for line in fin:
             if not line or line.startswith("#"):
@@ -81,8 +87,29 @@ def init_top_urls():
             except ValueError:
                 continue
             else:
-                URLS.append(url)
+                if not blacklisted(url):
+                    URLS.append(url)
+    sys.stdout.write("done\n")
             
+
+def init_blacklist():
+    sys.stdout.write("Initializing blacklist...")
+    with open(BLACKLIST_FILE, "r") as fin:
+        for line in fin:
+            if not line:
+                continue
+            try:
+                BLACKLIST.add(re.compile(line.strip()))
+            except Exception:
+                pass
+    sys.stdout.write("done\n")
+
+
+def blacklisted(url):
+    for regex_word in BLACKLIST:
+        if regex_word.search(url):
+            return True
+
 
 def get_top_url():
     url_idx = random.randint(0, len(URLS))
@@ -107,7 +134,9 @@ def get_web_page(url, depth=0):
     sys.stdout.write("%s links\n" % len(link_parser.links))
 
     if depth < LINK_DEPTH:
-        time.sleep(random.randint(LINKS_MIN_WAIT, LINKS_MAX_WAIT))
+        delay = random.randint(LINKS_MIN_WAIT, LINKS_MAX_WAIT)
+        sys.stdout.write("Pause %s\n" % delay)
+        time.sleep(delay)
         next_hop = link_parser.get_any_link()
         get_web_page(next_hop, depth + 1)
 
@@ -121,8 +150,9 @@ def generate_traffic():
             sys.stderr.write("\n%s\n" % traceback.format_exc())
             sys.stderr.write("Hackish catch-all caught uncaught exception: %s\n" % e)
         else:
-            time.sleep(random.randint(MIN_WAIT, MAX_WAIT))
-            sys.stdout.write(".")
+            delay = random.randint(MIN_WAIT, MAX_WAIT)
+            sys.stdout.write("Pausing %s\n" % delay)
+            time.sleep(delay)
 
 
 def main(args):
@@ -136,6 +166,7 @@ def main(args):
         sys.stderr.write("No web proxy in use\n")
     opener.addheaders = [("User-agent", "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:40.0) Gecko/20100101 Firefox/40.1")]
     urllib2.install_opener(opener)
+    init_blacklist()
     init_top_urls()
     generate_traffic()
 
